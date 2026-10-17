@@ -1,0 +1,52 @@
+services:
+  - type: web
+    name: hunar-vikas-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT wsgi:app
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: AUTH_ENV
+        value: production
+      - key: AUTH_DATABASE_URL
+        sync: false
+      - key: AUTH_SECRET_KEY
+        sync: false
+      - key: AUTH_APP_BASE_URL
+        sync: false
+      - key: AUTH_ALLOWED_ORIGINS
+        sync: false
+      - key: AUTH_COOKIE_SECURE
+        value: "true"
+      - key: AUTH_COOKIE_SAMESITE
+        value: Lax
+      - key: AUTH_MAIL_BACKEND
+        value: resend
+      - key: AUTH_MAIL_ASYNC
+        value: "true"
+      - key: AUTH_MAIL_FROM
+        sync: false
+      - key: AUTH_RESEND_API_KEY
+        sync: false
+      - key: AUTH_RESEND_API_URL
+        value: https://api.resend.com/emails
+
+  # Static shell serving the landing page and the three frontend bundles.
+  #   /               -> LandinPage (landing)
+  #   /login/         -> login app (sign-in + forgot-password views)
+  #   /registration/  -> registration app (new-user sign-up)
+  #   /dashboard/     -> dashboard app (overview, skill passport, training, opportunities)
+  - type: web
+    name: hunar-vikas-frontend
+    runtime: static
+    buildCommand: npm ci --prefix . && npm ci --prefix LandinPage && npm run build --prefix LandinPage && npm ci --prefix login && npm run build --prefix login && npm ci --prefix Registration && npm run build --prefix Registration && npm ci --prefix dashboard && npm run build --prefix dashboard && rm -rf LandinPage/dist/login LandinPage/dist/registration LandinPage/dist/dashboard && cp -r login/dist LandinPage/dist/login && cp -r Registration/dist LandinPage/dist/registration && cp -r dashboard/dist LandinPage/dist/dashboard
+    staticPublishPath: LandinPage/dist
+    pullRequestPreviewsEnabled: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: VITE_API_BASE_URL
+        sync: false
