@@ -1,4 +1,5 @@
 services:
+  # 1. Flask Backend Service
   - type: web
     name: hunar-vikas-api
     runtime: python
@@ -34,19 +35,39 @@ services:
       - key: AUTH_RESEND_API_URL
         value: https://api.resend.com/emails
 
-  # Static shell serving the landing page and the three frontend bundles.
-  #   /               -> LandinPage (landing)
-  #   /login/         -> login app (sign-in + forgot-password views)
-  #   /registration/  -> registration app (new-user sign-up)
-  #   /dashboard/     -> dashboard app (overview, skill passport, training, opportunities)
+  # 2. Combined Static Frontend Shell
   - type: web
     name: hunar-vikas-frontend
     runtime: static
-    buildCommand: npm ci --prefix . && npm ci --prefix LandinPage && npm run build --prefix LandinPage && npm ci --prefix login && npm run build --prefix login && npm ci --prefix Registration && npm run build --prefix Registration && npm ci --prefix dashboard && npm run build --prefix dashboard && rm -rf LandinPage/dist/login LandinPage/dist/registration LandinPage/dist/dashboard && cp -r login/dist LandinPage/dist/login && cp -r Registration/dist LandinPage/dist/registration && cp -r dashboard/dist LandinPage/dist/dashboard
+    rootDir: frontend
+    buildCommand: >
+      npm install --include=dev &&
+      npm install --include=dev --prefix LandinPage && npm run build --prefix LandinPage &&
+      npm install --include=dev --prefix login && npm run build --prefix login &&
+      npm install --include=dev --prefix Registration && npm run build --prefix Registration &&
+      npm install --include=dev --prefix dashboard && npm run build --prefix dashboard &&
+      rm -rf LandinPage/dist/login LandinPage/dist/registration LandinPage/dist/dashboard &&
+      cp -r login/dist LandinPage/dist/login &&
+      cp -r Registration/dist LandinPage/dist/registration &&
+      cp -r dashboard/dist LandinPage/dist/dashboard
     staticPublishPath: LandinPage/dist
-    pullRequestPreviewsEnabled: true
     envVars:
       - key: NODE_VERSION
         value: 22
       - key: VITE_API_BASE_URL
-        sync: false
+        value: ""
+    routes:
+      # Proxy API calls to the backend service (replace URL once backend is live if needed)
+      - type: rewrite
+        source: /api/*
+        destination: https://hunar-vikas-api.onrender.com/api/*
+      # SPA fallbacks for sub-apps
+      - type: rewrite
+        source: /login/*
+        destination: /login/index.html
+      - type: rewrite
+        source: /registration/*
+        destination: /registration/index.html
+      - type: rewrite
+        source: /dashboard/*
+        destination: /dashboard/index.html
