@@ -6,7 +6,7 @@ Flask authentication service.
 ## Repository layout
 
 - `backend/` - Flask WSGI app, authentication service, SQLAlchemy schema, tests
-- `LandinPage/` - landing page
+- `LandingPage/` - landing page
 - `login/` - sign-in and password recovery
 - `Registration/` - registration and email verification
 - `dashboard/` - authenticated dashboard
@@ -53,7 +53,7 @@ npm ci
 npm run build
 ```
 
-The same build commands apply to `LandinPage`, `login`, and `dashboard`.
+The same build commands apply to `LandingPage`, `login`, and `dashboard`.
 
 ## Production configuration
 

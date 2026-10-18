@@ -1,6 +1,6 @@
 /* Hunar Vikas India — shared design tokens.
    Single source of truth for brand colors, spacing, radius, shadows, fonts.
-   Imported via the "@shared" alias in all 4 apps (LandinPage, login,
+   Imported via the "@shared" alias in all 4 apps (LandingPage, login,
    Registration, dashboard). Keep values in sync with the former per-app
    `:root` blocks they replace. */
 

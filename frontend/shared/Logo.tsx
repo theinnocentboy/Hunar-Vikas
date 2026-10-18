@@ -6,7 +6,7 @@ type LogoProps = {
 
 /**
  * Shared Hunar Vikas India brand mark. Replaces the per-app `Logo`/`Brand`
- * copies in LandinPage, login, Registration and dashboard.
+ * copies in LandingPage, login, Registration and dashboard.
  */
 export default function Logo({ href = '/', tagline = 'Skills. People. Stronger India.', dark = false }: LogoProps) {
   return (

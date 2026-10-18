@@ -42,15 +42,15 @@ services:
     rootDir: frontend
     buildCommand: >
       npm install --include=dev &&
-      npm install --include=dev --prefix LandinPage && npm run build --prefix LandinPage &&
+      npm install --include=dev --prefix LandingPage && npm run build --prefix LandingPage &&
       npm install --include=dev --prefix login && npm run build --prefix login &&
       npm install --include=dev --prefix Registration && npm run build --prefix Registration &&
       npm install --include=dev --prefix dashboard && npm run build --prefix dashboard &&
-      rm -rf LandinPage/dist/login LandinPage/dist/registration LandinPage/dist/dashboard &&
-      cp -r login/dist LandinPage/dist/login &&
-      cp -r Registration/dist LandinPage/dist/registration &&
-      cp -r dashboard/dist LandinPage/dist/dashboard
-    staticPublishPath: LandinPage/dist
+      rm -rf LandingPage/dist/login LandingPage/dist/registration LandingPage/dist/dashboard &&
+      cp -r login/dist LandingPage/dist/login &&
+      cp -r Registration/dist LandingPage/dist/registration &&
+      cp -r dashboard/dist LandingPage/dist/dashboard
+    staticPublishPath: LandingPage/dist
     envVars:
       - key: NODE_VERSION
         value: 22
