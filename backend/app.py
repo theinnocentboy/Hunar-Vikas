@@ -12,7 +12,7 @@ def create_app(config=None, identity_resolver=None):
 
     @app.get("/")
     def root_redirect():
-        return redirect("https://hunar-vikas-frontend-m73g.onrender.com", code=302)
+        return redirect("https://hunar-vikas-jx0q.onrender.com", code=302)
 
     @app.before_request
     def write_guard():  # same-origin JSON guard, as the contract describes
