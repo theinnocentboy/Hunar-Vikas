@@ -1,7 +1,7 @@
 """PLACEHOLDER feature app. Same hook as the real one: create_app(config, identity_resolver)."""
 from urllib.parse import urlparse
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, redirect
 
 
 def create_app(config=None, identity_resolver=None):
@@ -9,6 +9,10 @@ def create_app(config=None, identity_resolver=None):
         raise RuntimeError("identity_resolver is required (no development identity)")
     app = Flask(__name__)
     app.config.update(config or {})
+
+    @app.get("/")
+    def root_redirect():
+        return redirect("https://hunar-vikas-frontend-m73g.onrender.com", code=302)
 
     @app.before_request
     def write_guard():  # same-origin JSON guard, as the contract describes
