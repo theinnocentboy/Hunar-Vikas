@@ -7,6 +7,7 @@ import { register, resendVerification, verifyEmail } from './services/auth.servi
 import './index.css'
 
 const MINI_STEPS = ['Create account', 'Verify email', 'Explore & grow']
+const RESEND_COOLDOWN_SECONDS = 60
 
 type Errors = { name?: string; email?: string; password?: string; confirm?: string; agree?: string }
 
@@ -28,6 +29,11 @@ export default function App() {
   const [newUserId, setNewUserId] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
+  // Resend timer & feedback state
+  const [resendCooldown, setResendCooldown] = useState(0)
+  const [resendLoading, setResendLoading] = useState(false)
+  const [resendInfo, setResendInfo] = useState<string | undefined>()
+
   useEffect(() => {
     const token = new URLSearchParams(window.location.hash.slice(1)).get('token')
     if (token) {
@@ -36,6 +42,15 @@ export default function App() {
       window.history.replaceState(null, '', window.location.pathname)
     }
   }, [])
+
+  // Tick down the 60-second resend cooldown every second
+  useEffect(() => {
+    if (resendCooldown <= 0) return
+    const timer = window.setInterval(() => {
+      setResendCooldown((prev) => Math.max(0, prev - 1))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [resendCooldown])
 
   function validate(): boolean {
     const next: Errors = {}
@@ -62,13 +77,32 @@ export default function App() {
     e.preventDefault()
     if (status === 'loading') return
     if (!validate()) return
+    setVerifyError(undefined)
+    setResendInfo(undefined)
     setStatus('loading')
     try {
       await register(name, email, password, accountType, organizationName)
+      setResendCooldown(RESEND_COOLDOWN_SECONDS)
       setStatus('verify')
     } catch (err) {
       setVerifyError(err instanceof Error ? err.message : 'Could not create the account.')
       setStatus('idle')
+    }
+  }
+
+  async function onResendCode(): Promise<void> {
+    if (resendCooldown > 0 || resendLoading) return
+    setVerifyError(undefined)
+    setResendInfo(undefined)
+    setResendLoading(true)
+    try {
+      await resendVerification(email)
+      setResendCooldown(RESEND_COOLDOWN_SECONDS)
+      setResendInfo('A new verification code has been sent to your email.')
+    } catch (err) {
+      setVerifyError(err instanceof Error ? err.message : 'Could not resend verification code.')
+    } finally {
+      setResendLoading(false)
     }
   }
 
@@ -90,6 +124,8 @@ export default function App() {
     setOrganizationName('')
     setOtp('')
     setVerifyError(undefined)
+    setResendInfo(undefined)
+    setResendCooldown(0)
     setErrors({})
     setCopied(false)
   }
@@ -129,6 +165,7 @@ export default function App() {
                   <form onSubmit={async (e) => {
                     e.preventDefault()
                     setVerifyError(undefined)
+                    setResendInfo(undefined)
                     setVerifyLoading(true)
                     try {
                       const user = await verifyEmail(email, otp, true, verificationToken || undefined)
@@ -147,13 +184,30 @@ export default function App() {
                         value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} />
                     </div>}
                     {verifyError && <small className="err" role="alert">{verifyError}</small>}
+                    {resendInfo && <small className="muted" role="status" style={{ display: 'block', marginBottom: '8px' }}>{resendInfo}</small>}
                     <button type="submit" className="btn btn-primary btn-lg btn-full" disabled={verifyLoading || (!verificationToken && otp.length !== 6)}>
                       {verifyLoading ? 'Verifying…' : 'Verify email →'}
                     </button>
                   </form>
-                  {!verificationToken && <button type="button" className="link-btn" onClick={async () => {
-                    await resendVerification(email)
-                  }}>Resend code</button>}
+                  {!verificationToken && (
+                    <button
+                      type="button"
+                      className="link-btn"
+                      disabled={resendCooldown > 0 || resendLoading}
+                      style={{
+                        marginTop: '10px',
+                        opacity: resendCooldown > 0 || resendLoading ? 0.6 : 1,
+                        cursor: resendCooldown > 0 || resendLoading ? 'not-allowed' : 'pointer',
+                      }}
+                      onClick={onResendCode}
+                    >
+                      {resendLoading
+                        ? 'Sending…'
+                        : resendCooldown > 0
+                          ? `Resend code in ${resendCooldown}s`
+                          : 'Resend code'}
+                    </button>
+                  )}
                 </div>
               </div>
             ) : status === 'success' ? (

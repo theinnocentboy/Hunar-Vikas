@@ -6,13 +6,13 @@ codes never reach log output. Production uses authenticated SMTP or the Resend H
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import smtplib
 import ssl
 import threading
 import time
-import json
 import urllib.error
 import urllib.request
 from email.message import EmailMessage
@@ -36,7 +36,6 @@ HTML_TEMPLATES = {"verify": "email-verification.html", "reset": "password-reset.
 class Mailer:
     def __init__(self, cfg: AuthConfig):
         self.cfg = cfg
-        # StrictUndefined: a missing template variable is a bug, not a blank.
         self.env = Environment(
             loader=FileSystemLoader(str(TEMPLATE_DIR)),
             autoescape=select_autoescape(["html"]),
@@ -104,6 +103,7 @@ class Mailer:
                 headers={
                     "Authorization": f"Bearer {self.cfg.resend_api_key}",
                     "Content-Type": "application/json",
+                    "User-Agent": "HunarVikas/1.0",
                 },
                 method="POST",
             )
@@ -112,7 +112,8 @@ class Mailer:
                     if not 200 <= response.status < 300:
                         raise RuntimeError(f"Resend returned HTTP {response.status}")
             except urllib.error.HTTPError as exc:
-                raise RuntimeError(f"Resend returned HTTP {exc.code}") from exc
+                err_body = exc.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"Resend returned HTTP {exc.code}: {err_body}") from exc
             return
         with smtplib.SMTP(self.cfg.smtp_host, self.cfg.smtp_port, timeout=10) as smtp:
             smtp.starttls(context=ssl.create_default_context())
@@ -123,8 +124,9 @@ class Mailer:
     def _send_quietly(self, kind: str, to: str, ctx: dict) -> None:
         try:
             self._deliver(self.build(kind, to, ctx), kind)
-        except Exception as exc:  # never log addresses, codes or tokens
+        except Exception as exc:
             log.error("mail delivery failed kind=%s error=%s", kind, type(exc).__name__)
+            print(f"[MAILER ERROR] kind={kind} {type(exc).__name__}: {exc}", flush=True)
 
     def send(self, kind: str, to: str, ctx: dict) -> None:
         """Fire-and-forget so response time does not depend on mail delivery

@@ -1,3 +1,4 @@
+
 """Authentication business logic (no HTTP concerns except the identity resolver)."""
 from __future__ import annotations
 
@@ -279,6 +280,8 @@ class AuthService:
         email = norm_email(email_raw)
         self._limit_hit("resend_ip", ip, 10, 3600)
         if email:
+            # Enforce 60-second cooldown BEFORE counting against the 5/hour limit
+            self._limit_hit("resend_cooldown", email, 1, self.cfg.resend_cooldown_seconds)
             self._limit_hit("resend_email", email, 5, 3600)
             mail = None
             with self.engine.begin() as conn:
@@ -286,12 +289,12 @@ class AuthService:
                     users.c.email == email, users.c.account_status == "pending_verification"
                 )).mappings().first()
                 if row:
-                    issued = self._issue_code(conn, row["user_id"], respect_cooldown=True)
+                    issued = self._issue_code(conn, row["user_id"], respect_cooldown=False)
                     if issued:
                         mail = (row["email"], row["display_name"], issued)
             if mail:
                 self._mail_verification(*mail)
-        return {"ok": True}
+        return {"ok": True, "cooldown_seconds": self.cfg.resend_cooldown_seconds}
 
     def verify_email(self, data: dict, ip: str, remember: bool = False):
         """Verify by e-mail+code or by link token. Returns (session_token, SessionInfo)."""
