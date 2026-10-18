@@ -2,6 +2,7 @@ from pathlib import Path
 import sys
 
 from dotenv import load_dotenv
+from werkzeug.middleware.proxy_fix import ProxyFix  # Add this import
 
 # Support both `flask --app wsgi` from backend/ and
 # `flask --app backend.wsgi` from the repository root.
@@ -23,4 +24,6 @@ app = create_app(
     identity_resolver=auth.resolve_identity,
 )
 auth.init_app(app)
+
+# Apply ProxyFix for Render's reverse proxy
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
