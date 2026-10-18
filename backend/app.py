@@ -12,7 +12,8 @@ def create_app(config=None, identity_resolver=None):
 
     @app.get("/")
     def root_redirect():
-        return redirect("https://hunar-vikas-jx0q.onrender.com", code=302)
+        target = app.config.get("APP_BASE_URL") or "https://hunarvikas.live"
+        return redirect(target, code=302)
 
     @app.before_request
     def write_guard():  # same-origin JSON guard, as the contract describes

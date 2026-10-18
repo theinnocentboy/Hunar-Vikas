@@ -2,9 +2,10 @@ import {
   registerAccount,
   resendVerification,
   verifyEmail,
+  type RegisterResponse,
 } from '@shared/auth.ts';
 
-export { resendVerification, verifyEmail };
+export { resendVerification, verifyEmail, type RegisterResponse };
 
 export async function register(
   name: string,
@@ -12,8 +13,8 @@ export async function register(
   password: string,
   accountType: 'individual' | 'employer',
   organizationName = '',
-): Promise<void> {
-  await registerAccount({
+): Promise<RegisterResponse> {
+  return await registerAccount({
     displayName: name,
     email,
     password,

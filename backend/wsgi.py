@@ -20,7 +20,11 @@ load_dotenv(Path(__file__).with_name(".env"))
 auth = AuthService.from_env()
 auth.init_db()
 app = create_app(
-    {"DEV_MODE": False, "ALLOWED_ORIGINS": auth.cfg.allowed_origins},
+    {
+        "DEV_MODE": False,
+        "ALLOWED_ORIGINS": auth.cfg.allowed_origins,
+        "APP_BASE_URL": auth.cfg.app_base_url,
+    },
     identity_resolver=auth.resolve_identity,
 )
 auth.init_app(app)

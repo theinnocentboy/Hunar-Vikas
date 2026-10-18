@@ -28,7 +28,6 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 SUBJECTS = {
     "verify": "Verify your email \u2014 Hunar Vikas India",
     "reset": "Reset your password \u2014 Hunar Vikas India",
-    "already": "You already have a Hunar Vikas India account",
 }
 HTML_TEMPLATES = {"verify": "email-verification.html", "reset": "password-reset.html"}
 

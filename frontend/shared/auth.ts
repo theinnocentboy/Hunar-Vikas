@@ -10,6 +10,17 @@ export type AuthUser = {
   createdAt: string;
 };
 
+export type RegisterResponse = {
+  verification_required?: boolean;
+  otp_already_sent?: boolean;
+  cooldown_seconds?: number;
+};
+
+export type ResendResponse = {
+  ok?: boolean;
+  cooldown_seconds?: number;
+};
+
 type AuthResponse = {
   authenticated?: boolean;
   user?: {
@@ -22,6 +33,10 @@ type AuthResponse = {
     organization: string;
   };
   csrf_token?: string;
+  verification_required?: boolean;
+  otp_already_sent?: boolean;
+  cooldown_seconds?: number;
+  ok?: boolean;
   error?: string;
   code?: string;
   fields?: Record<string, string>;
@@ -35,12 +50,14 @@ function apiUrl(path: string): string {
 }
 
 export class AuthApiError extends Error {
+  status: number;
   code: string;
   fields: Record<string, string>;
 
   constructor(response: AuthResponse, status: number) {
     super(response.error ?? `Authentication request failed (${status}).`);
     this.name = 'AuthApiError';
+    this.status = status;
     this.code = response.code ?? 'auth_error';
     this.fields = response.fields ?? {};
   }
@@ -102,8 +119,8 @@ export async function registerAccount(data: {
   displayName: string;
   accountType: AuthUser['role'];
   organizationName?: string;
-}): Promise<void> {
-  await request('/api/auth/register', {
+}): Promise<RegisterResponse> {
+  return await request('/api/auth/register', {
     method: 'POST',
     body: JSON.stringify({
       email: data.email,
@@ -123,8 +140,8 @@ export async function verifyEmail(email: string, otp: string, remember = true, t
   })) as AuthUser;
 }
 
-export async function resendVerification(email: string): Promise<void> {
-  await request('/api/auth/resend-verification', {
+export async function resendVerification(email: string): Promise<ResendResponse> {
+  return await request('/api/auth/resend-verification', {
     method: 'POST',
     body: JSON.stringify({ email }),
   });

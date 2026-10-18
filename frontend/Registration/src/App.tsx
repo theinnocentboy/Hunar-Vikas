@@ -9,7 +9,26 @@ import './index.css'
 const MINI_STEPS = ['Create account', 'Verify email', 'Explore & grow']
 const RESEND_COOLDOWN_SECONDS = 60
 
-type Errors = { name?: string; email?: string; password?: string; confirm?: string; agree?: string }
+type Errors = {
+  name?: string
+  email?: string
+  organizationName?: string
+  password?: string
+  confirm?: string
+  agree?: string
+}
+
+type RegisterResponse = {
+  verification_required?: boolean
+  otp_already_sent?: boolean
+  cooldown_seconds?: number
+}
+
+type ApiError = Error & {
+  status?: number
+  code?: string
+  fields?: Record<string, string>
+}
 
 export default function App() {
   const [name, setName] = useState('')
@@ -28,6 +47,7 @@ export default function App() {
   const [status, setStatus] = useState<'idle' | 'loading' | 'verify' | 'success'>('idle')
   const [newUserId, setNewUserId] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [accountExists, setAccountExists] = useState(false)
 
   // Resend timer & feedback state
   const [resendCooldown, setResendCooldown] = useState(0)
@@ -60,6 +80,9 @@ export default function App() {
     if (!isEmail(email)) {
       next.email = 'Enter a valid email address.'
     }
+    if (accountType === 'employer' && organizationName.trim().length < 2) {
+      next.organizationName = 'Enter your organization name.'
+    }
     if (!isPassword(password)) {
       next.password = 'Password must be at least 8 characters.'
     }
@@ -79,13 +102,55 @@ export default function App() {
     if (!validate()) return
     setVerifyError(undefined)
     setResendInfo(undefined)
+    setAccountExists(false)
     setStatus('loading')
+
     try {
-      await register(name, email, password, accountType, organizationName)
-      setResendCooldown(RESEND_COOLDOWN_SECONDS)
+      const res = (await register(
+        name,
+        email,
+        password,
+        accountType,
+        organizationName
+      )) as RegisterResponse | void
+
+      const cooldown =
+        res && typeof res.cooldown_seconds === 'number'
+          ? res.cooldown_seconds
+          : RESEND_COOLDOWN_SECONDS
+
+      setResendCooldown(cooldown)
+
+      if (res && res.otp_already_sent) {
+        setResendInfo(
+          'An active verification code was already sent to your email. Please enter it below.'
+        )
+      }
+
       setStatus('verify')
     } catch (err) {
-      setVerifyError(err instanceof Error ? err.message : 'Could not create the account.')
+      const apiErr = err as ApiError
+      const msg = apiErr instanceof Error ? apiErr.message : 'Could not create the account.'
+      const isExistingAccount =
+        apiErr?.status === 409 ||
+        apiErr?.code === 'account_exists' ||
+        msg.toLowerCase().includes('already exists')
+
+      if (isExistingAccount) {
+        setAccountExists(true)
+        setErrors((prev) => ({
+          ...prev,
+          email: apiErr?.fields?.email || msg,
+        }))
+      } else if (apiErr?.fields && Object.keys(apiErr.fields).length > 0) {
+        setErrors((prev) => ({
+          ...prev,
+          ...apiErr.fields,
+        }))
+        setVerifyError(msg)
+      } else {
+        setVerifyError(msg)
+      }
       setStatus('idle')
     }
   }
@@ -96,8 +161,12 @@ export default function App() {
     setResendInfo(undefined)
     setResendLoading(true)
     try {
-      await resendVerification(email)
-      setResendCooldown(RESEND_COOLDOWN_SECONDS)
+      const res = (await resendVerification(email)) as { cooldown_seconds?: number } | void
+      const cooldown =
+        res && typeof res.cooldown_seconds === 'number'
+          ? res.cooldown_seconds
+          : RESEND_COOLDOWN_SECONDS
+      setResendCooldown(cooldown)
       setResendInfo('A new verification code has been sent to your email.')
     } catch (err) {
       setVerifyError(err instanceof Error ? err.message : 'Could not resend verification code.')
@@ -128,6 +197,7 @@ export default function App() {
     setResendCooldown(0)
     setErrors({})
     setCopied(false)
+    setAccountExists(false)
   }
 
   return (
@@ -250,6 +320,25 @@ export default function App() {
                   <p>Join Hunar Vikas India and start your skills journey.</p>
                 </div>
 
+                {accountExists && (
+                  <div className="success" role="alert" style={{ marginBottom: '16px' }}>
+                    <span className="success-ico">
+                      <i className="fa-solid fa-user-check" aria-hidden="true" />
+                    </span>
+                    <div>
+                      <strong>Account already exists</strong>
+                      <p>
+                        An account with <span className="muted">{email.trim()}</span> is already registered.
+                      </p>
+                      <div className="success-actions" style={{ marginTop: '8px' }}>
+                        <a href="/login/" className="btn btn-primary btn-sm">
+                          Sign in instead →
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <form onSubmit={onSubmit} noValidate>
                   <div className="field">
                     <label htmlFor="name">Full name</label>
@@ -283,15 +372,27 @@ export default function App() {
                         autoComplete="email"
                         placeholder="you@example.in"
                         value={email}
-                        onChange={(e) => setEmail(e.target.value)}
+                        onChange={(e) => {
+                          setEmail(e.target.value)
+                          if (accountExists) setAccountExists(false)
+                        }}
                         aria-invalid={Boolean(errors.email)}
                         aria-describedby={errors.email ? 'email-err' : undefined}
                       />
                     </div>
+                    {errors.email && (
+                      <small id="email-err" className="err" role="alert">
+                        {errors.email}
+                      </small>
+                    )}
 
-                    <div className="field">
+                    <div className="field" style={{ marginTop: '12px' }}>
                       <label htmlFor="account-type">Account type</label>
-                      <select id="account-type" value={accountType} onChange={(e) => setAccountType(e.target.value as 'individual' | 'employer')}>
+                      <select
+                        id="account-type"
+                        value={accountType}
+                        onChange={(e) => setAccountType(e.target.value as 'individual' | 'employer')}
+                      >
                         <option value="individual">Citizen / Artisan</option>
                         <option value="employer">Employer</option>
                       </select>
@@ -299,14 +400,21 @@ export default function App() {
                     {accountType === 'employer' && (
                       <div className="field">
                         <label htmlFor="organization-name">Organization name</label>
-                        <input id="organization-name" value={organizationName} onChange={(e) => setOrganizationName(e.target.value)}
-                          placeholder="Your organization" required />
+                        <input
+                          id="organization-name"
+                          value={organizationName}
+                          onChange={(e) => setOrganizationName(e.target.value)}
+                          placeholder="Your organization"
+                          aria-invalid={Boolean(errors.organizationName)}
+                          aria-describedby={errors.organizationName ? 'org-err' : undefined}
+                          required
+                        />
+                        {errors.organizationName && (
+                          <small id="org-err" className="err" role="alert">
+                            {errors.organizationName}
+                          </small>
+                        )}
                       </div>
-                    )}
-                    {errors.email && (
-                      <small id="email-err" className="err" role="alert">
-                        {errors.email}
-                      </small>
                     )}
                   </div>
 
@@ -397,7 +505,7 @@ export default function App() {
                   </button>
                 </form>
 
-                {verifyError && (
+                {verifyError && !accountExists && (
                   <p className="err signin-err" role="alert">
                     {verifyError}
                   </p>

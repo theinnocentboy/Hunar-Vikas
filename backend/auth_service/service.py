@@ -238,10 +238,12 @@ class AuthService:
 
     def register(self, data: dict, ip: str) -> dict:
         """Blocks already-active accounts before calling Resend (0 emails used)
-        and reuses unexpired OTPs for pending_verification accounts."""
+        and reuses unexpired OTPs within the cooldown window for pending accounts."""
         clean = self._validate_registration(data)
+        # Check IP rate limit first, and only check (don't record yet) email limit
         self._limit_hit("reg_ip", ip, 10, 3600)
-        self._limit_hit("reg_email", clean["email"], 5, 3600)
+        self._limit_check("reg_email", clean["email"], 5, 3600)
+
         pw_hash = hash_password(clean["password"])  # always hashed: uniform timing
         mail = None
         otp_already_sent = False
@@ -269,8 +271,18 @@ class AuthService:
                         )
 
                     elif existing["account_status"] == "pending_verification":
-                        # Check if an unused, unexpired OTP already exists in the inbox
                         now = utcnow()
+                        # Update pending credentials in case the user is correcting a typo before verifying
+                        conn.execute(
+                            update(users)
+                            .where(users.c.user_id == existing["user_id"])
+                            .values(
+                                password_hash=pw_hash,
+                                display_name=clean["display_name"],
+                                updated_at=now,
+                            )
+                        )
+
                         active_code = conn.execute(
                             select(verification_codes)
                             .where(
@@ -283,15 +295,21 @@ class AuthService:
                         ).mappings().first()
 
                         if active_code is not None:
-                            # Do NOT send a duplicate email; route to OTP screen to use existing code
-                            otp_already_sent = True
                             elapsed = int((now - active_code["created_at"]).total_seconds())
-                            cooldown_remaining = max(0, self.cfg.resend_cooldown_seconds - elapsed)
+                            if elapsed < self.cfg.resend_cooldown_seconds:
+                                # Within 60s cooldown -> reuse OTP already in inbox (0 emails sent)
+                                otp_already_sent = True
+                                cooldown_remaining = max(0, self.cfg.resend_cooldown_seconds - elapsed)
+                            else:
+                                # Cooldown passed -> issue fresh OTP
+                                issued = self._issue_code(conn, existing["user_id"], respect_cooldown=False)
+                                if issued:
+                                    mail = ("verify", clean["email"], clean["display_name"], issued)
                         else:
-                            # Previous OTP expired -> issue and send a fresh one
-                            issued = self._issue_code(conn, existing["user_id"], respect_cooldown=True)
+                            # Previous OTP expired -> issue fresh OTP
+                            issued = self._issue_code(conn, existing["user_id"], respect_cooldown=False)
                             if issued:
-                                mail = ("verify", existing["email"], existing["display_name"], issued)
+                                mail = ("verify", clean["email"], clean["display_name"], issued)
 
                     elif existing["account_status"] == "active":
                         # Stop immediately: 0 Resend emails used, never goes to OTP page
@@ -312,6 +330,8 @@ class AuthService:
                 continue  # concurrent signup or code collision: re-evaluate
 
         if mail:
+            # Only record against the 5/hour email limit when an email is actually sent
+            self._limit_record("reg_email", clean["email"])
             _, email, name, issued = mail
             self._mail_verification(email, name, issued)
 
