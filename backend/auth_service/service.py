@@ -237,44 +237,89 @@ class AuthService:
         })
 
     def register(self, data: dict, ip: str) -> dict:
-        """Always returns the same body whether or not the e-mail is already
-        registered (no account enumeration)."""
+        """Blocks already-active accounts before calling Resend (0 emails used)
+        and reuses unexpired OTPs for pending_verification accounts."""
         clean = self._validate_registration(data)
         self._limit_hit("reg_ip", ip, 10, 3600)
         self._limit_hit("reg_email", clean["email"], 5, 3600)
         pw_hash = hash_password(clean["password"])  # always hashed: uniform timing
         mail = None
+        otp_already_sent = False
+        cooldown_remaining = self.cfg.resend_cooldown_seconds
+
         for _ in range(3):
             try:
                 with self.engine.begin() as conn:
                     existing = conn.execute(
-                        select(users).where(users.c.email == clean["email"])).mappings().first()
+                        select(users).where(users.c.email == clean["email"])
+                    ).mappings().first()
+
                     if existing is None:
                         user_id = self._insert_user(
                             conn, email=clean["email"], pw_hash=pw_hash,
                             display_name=clean["display_name"], role=clean["account_type"],
                             status="pending_verification", verified=False,
-                            org_name=clean["organization_name"])
-                        mail = ("verify", clean["email"], clean["display_name"],
-                                self._issue_code(conn, user_id))
+                            org_name=clean["organization_name"]
+                        )
+                        mail = (
+                            "verify",
+                            clean["email"],
+                            clean["display_name"],
+                            self._issue_code(conn, user_id),
+                        )
+
                     elif existing["account_status"] == "pending_verification":
-                        # Never overwrite the stored password: whoever re-registers
-                        # an unverified address does not own it.
-                        issued = self._issue_code(conn, existing["user_id"], respect_cooldown=True)
-                        if issued:
-                            mail = ("verify", existing["email"], existing["display_name"], issued)
+                        # Check if an unused, unexpired OTP already exists in the inbox
+                        now = utcnow()
+                        active_code = conn.execute(
+                            select(verification_codes)
+                            .where(
+                                verification_codes.c.user_id == existing["user_id"],
+                                verification_codes.c.used_at.is_(None),
+                                verification_codes.c.expires_at > now,
+                            )
+                            .order_by(verification_codes.c.created_at.desc())
+                            .limit(1)
+                        ).mappings().first()
+
+                        if active_code is not None:
+                            # Do NOT send a duplicate email; route to OTP screen to use existing code
+                            otp_already_sent = True
+                            elapsed = int((now - active_code["created_at"]).total_seconds())
+                            cooldown_remaining = max(0, self.cfg.resend_cooldown_seconds - elapsed)
+                        else:
+                            # Previous OTP expired -> issue and send a fresh one
+                            issued = self._issue_code(conn, existing["user_id"], respect_cooldown=True)
+                            if issued:
+                                mail = ("verify", existing["email"], existing["display_name"], issued)
+
                     elif existing["account_status"] == "active":
-                        mail = ("already", existing["email"], existing["display_name"], None)
+                        # Stop immediately: 0 Resend emails used, never goes to OTP page
+                        raise AuthError(
+                            409,
+                            "account_exists",
+                            "An account with this email already exists. Please sign in.",
+                            fields={"email": "An account with this email already exists. Please sign in."},
+                        )
+                    else:
+                        raise AuthError(
+                            403,
+                            "account_unavailable",
+                            "This account is unavailable.",
+                        )
                 break
             except IntegrityError:
                 continue  # concurrent signup or code collision: re-evaluate
+
         if mail:
-            kind, email, name, issued = mail
-            if kind == "verify":
-                self._mail_verification(email, name, issued)
-            else:
-                self.mailer.send("already", email, {"loginUrl": f"{self.cfg.app_base_url}/login/"})
-        return {"verification_required": True}
+            _, email, name, issued = mail
+            self._mail_verification(email, name, issued)
+
+        return {
+            "verification_required": True,
+            "otp_already_sent": otp_already_sent,
+            "cooldown_seconds": cooldown_remaining,
+        }
 
     def resend_verification(self, email_raw, ip: str) -> dict:
         email = norm_email(email_raw)
